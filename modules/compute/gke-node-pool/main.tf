@@ -102,11 +102,11 @@ resource "google_container_node_pool" "node_pool" {
   }
 
   dynamic "placement_policy" {
-    for_each = var.placement_policy.type != null ? [1] : []
+    for_each = length(var.placement_policy) > count.index ? [var.placement_policy[count.index]] : []
     content {
-      type         = var.placement_policy.type
-      policy_name  = var.placement_policy.name
-      tpu_topology = var.placement_policy.tpu_topology
+      type         = placement_policy.value.type
+      policy_name  = placement_policy.value.name
+      tpu_topology = placement_policy.value.tpu_topology
     }
   }
 
@@ -332,15 +332,24 @@ resource "google_container_node_pool" "node_pool" {
       error_message = "At least one of max_unavailable or max_surge must greater than 0"
     }
     precondition {
-      condition     = var.placement_policy.type != "COMPACT" || (var.zones != null ? (length(var.zones) == 1) : false)
+      condition = anytrue([
+        for policy in var.placement_policy :
+        policy.type == "COMPACT"
+      ]) || (var.zones != null ? (length(var.zones) == 1) : false)
       error_message = "Compact placement is only available for node pools operating in a single zone."
     }
     precondition {
-      condition     = var.placement_policy.type != "COMPACT" || local.upgrade_settings.strategy != "BLUE_GREEN"
+      condition = anytrue([
+        for policy in var.placement_policy :
+        policy.type == "COMPACT"
+      ]) || local.upgrade_settings.strategy != "BLUE_GREEN"
       error_message = "Compact placement is not supported with blue-green upgrades."
     }
     precondition {
-      condition     = !(var.enable_queued_provisioning == true && var.placement_policy.type == "COMPACT")
+      condition = !(var.enable_queued_provisioning == true && anytrue([
+        for policy in var.placement_policy :
+        policy.type == "COMPACT"
+      ]))
       error_message = "placement_policy cannot be COMPACT when enable_queued_provisioning is true."
     }
     precondition {

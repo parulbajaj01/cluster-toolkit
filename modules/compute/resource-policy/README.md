@@ -70,6 +70,7 @@ No modules.
 |------|-------------|------|---------|:--------:|
 | <a name="input_group_placement_max_distance"></a> [group\_placement\_max\_distance](#input\_group\_placement\_max\_distance) | The max distance for group placement policy to use for the node pool's nodes. If set it will add a compact group placement policy.<br/>Note: Placement policies have the [following](https://cloud.google.com/compute/docs/instances/placement-policies-overview#restrictions-compact-policies) restrictions. | `number` | `0` | no |
 | <a name="input_name"></a> [name](#input\_name) | The resource policy's name. | `string` | n/a | yes |
+| <a name="input_num_policies"></a> [num\_policies](#input\_num\_policies) | Number of policies to create. | `number` | `1` | no |
 | <a name="input_project_id"></a> [project\_id](#input\_project\_id) | The project ID for the resource policy. | `string` | n/a | yes |
 | <a name="input_region"></a> [region](#input\_region) | The region for the the resource policy. | `string` | n/a | yes |
 | <a name="input_workload_policy"></a> [workload\_policy](#input\_workload\_policy) | Describes the workload policy | <pre>object({<br/>    type                  = optional(string, null)<br/>    max_topology_distance = optional(string, null)<br/>    accelerator_topology  = optional(string, null)<br/>  })</pre> | <pre>{<br/>  "accelerator_topology": null,<br/>  "max_topology_distance": null,<br/>  "type": null<br/>}</pre> | no |
@@ -78,5 +79,5 @@ No modules.
 
 | Name | Description |
 |------|-------------|
-| <a name="output_placement_policy"></a> [placement\_policy](#output\_placement\_policy) | Group placement policy to use for placing VMs or GKE nodes placement. `COMPACT` is the only supported value for `type` currently. `name` is the name of the placement policy.<br/>It is assumed that the specified policy exists. To create a placement policy refer to https://cloud.google.com/sdk/gcloud/reference/compute/resource-policies/create/group-placement.<br/>Note: Placement policies have the [following](https://cloud.google.com/compute/docs/instances/placement-policies-overview#restrictions-compact-policies) restrictions. |
+| <a name="output_placement_policy"></a> [placement\_policy](#output\_placement\_policy) | List of Group placement policies to use for placing VMs or GKE nodes placement. Each object in the list represents one created policy. `COMPACT` is the only supported value for `type` currently. `name` is the name of the placement policy.<br/>It is assumed that the specified policy exists. To create a placement policy refer to https://cloud.google.com/sdk/gcloud/reference/compute/resource-policies/create/group-placement.<br/>Note: Placement policies have the [following](https://cloud.google.com/compute/docs/instances/placement-policies-overview#restrictions-compact-policies) restrictions. |
 <!-- END OF PRE-COMMIT-TERRAFORM DOCS HOOK -->

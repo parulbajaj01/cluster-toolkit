@@ -53,3 +53,9 @@ variable "workload_policy" {
   }
   nullable = false
 }
+
+variable "num_policies" {
+  description = "Number of policies to create."
+  type        = number
+  default     = 1
+}

@@ -16,13 +16,13 @@
 
 output "placement_policy" {
   description = <<-EOT
-  Group placement policy to use for placing VMs or GKE nodes placement. `COMPACT` is the only supported value for `type` currently. `name` is the name of the placement policy.
+  List of Group placement policies to use for placing VMs or GKE nodes placement. Each object in the list represents one created policy. `COMPACT` is the only supported value for `type` currently. `name` is the name of the placement policy.
   It is assumed that the specified policy exists. To create a placement policy refer to https://cloud.google.com/sdk/gcloud/reference/compute/resource-policies/create/group-placement.
   Note: Placement policies have the [following](https://cloud.google.com/compute/docs/instances/placement-policies-overview#restrictions-compact-policies) restrictions.
   EOT
 
-  value = {
+  value = [for policy in google_compute_resource_policy.policy : {
     type = (var.group_placement_max_distance > 0 || var.workload_policy.type != null) ? "COMPACT" : null
-    name = (var.group_placement_max_distance > 0 || var.workload_policy.type != null) ? local.name : null
-  }
+    name = (var.group_placement_max_distance > 0 || var.workload_policy.type != null) ? policy.name : null
+  }]
 }

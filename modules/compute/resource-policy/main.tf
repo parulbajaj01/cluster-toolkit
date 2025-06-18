@@ -17,15 +17,17 @@ resource "random_id" "resource_name_suffix" {
   byte_length = 4
 }
 
-locals {
-  name = "${var.name}-${random_id.resource_name_suffix.hex}"
-}
+# locals {
+#   name = "${var.name}-${random_id.resource_name_suffix.hex}"
+# }
 
 resource "google_compute_resource_policy" "policy" {
-  name     = local.name
+  name     = "${var.name}-${random_id.resource_name_suffix.hex}-${count.index}"
   region   = var.region
   project  = var.project_id
   provider = google-beta
+
+  count = var.num_policies
 
   dynamic "workload_policy" {
     for_each = var.workload_policy.type != null ? [1] : []

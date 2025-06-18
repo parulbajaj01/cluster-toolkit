@@ -225,18 +225,18 @@ variable "placement_policy" {
   Note: Placement policies have the [following](https://cloud.google.com/compute/docs/instances/placement-policies-overview#restrictions-compact-policies) restrictions.
   EOT
 
-  type = object({
+  type = list(object({
     type         = string
     name         = optional(string)
     tpu_topology = optional(string)
-  })
-  default = {
+  }))
+  default = [{
     type         = null
     name         = null
     tpu_topology = null
-  }
+  }]
   validation {
-    condition     = var.placement_policy.type == null || try(contains(["COMPACT"], var.placement_policy.type), false)
+    condition     = alltrue([for policy in var.placement_policy : policy.type == null || contains(["COMPACT"], policy.type)])
     error_message = "`COMPACT` is the only supported value for `placement_policy.type`."
   }
 }
