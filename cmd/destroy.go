@@ -27,6 +27,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"hpc-toolkit/telemetry"
 )
 
 func init() {
@@ -60,6 +62,8 @@ func runDestroyCmd(cmd *cobra.Command, args []string) {
 	checkErr(validateGroupSelectionFlags(bp), ctx)
 	checkErr(shell.ValidateDeploymentDirectory(bp.Groups, deplRoot), ctx)
 
+	telemetry.LogEvent("destroy_start", deplRoot, "Destroy operation started",nil)
+
 	// destroy in reverse order of creation!
 	packerManifests := []string{}
 	for i := len(bp.Groups) - 1; i >= 0; i-- {
@@ -71,6 +75,7 @@ func runDestroyCmd(cmd *cobra.Command, args []string) {
 		groupDir := filepath.Join(deplRoot, string(group.Name))
 
 		if err := shell.ImportInputs(groupDir, artifactsDir, bp); err != nil {
+			telemetry.LogEvent("destroy_error", string(group.Name), err.Error(),nil)
 			logging.Error("failed to import inputs for group %q: %v", group.Name, err)
 			// still proceed with destroying the group
 		}
@@ -90,11 +95,14 @@ func runDestroyCmd(cmd *cobra.Command, args []string) {
 
 		if err != nil {
 			logging.Error("failed to destroy group %q:\n%s", group.Name, renderError(err, *ctx))
+			telemetry.LogEvent("destroy_error", string(group.Name), err.Error(),nil)
+
 			if i == 0 || !destroyChoice(bp.Groups[i-1].Name) {
 				logging.Fatal("destruction of %q failed", deplRoot)
 			}
+		} else {
+			telemetry.LogEvent("destroy_success", string(group.Name), "Group destroyed successfully",nil)
 		}
-
 	}
 
 	modulewriter.WritePackerDestroyInstructions(os.Stdout, packerManifests)
@@ -103,6 +111,7 @@ func runDestroyCmd(cmd *cobra.Command, args []string) {
 func destroyTerraformGroup(groupDir string) error {
 	tf, err := shell.ConfigureTerraform(groupDir)
 	if err != nil {
+		telemetry.LogEvent("destroy_error", groupDir, fmt.Sprintf("Terraform configuration failed: %v", err),nil)
 		return err
 	}
 
@@ -127,6 +136,7 @@ func destroyChoice(nextGroup config.GroupName) bool {
 
 		in, err := reader.ReadString('\n')
 		if err != nil {
+			telemetry.LogEvent("destroy_error", string(nextGroup), fmt.Sprintf("Terraform configuration failed: %v", err),nil)
 			logging.Fatal("%v", err)
 		}
 
