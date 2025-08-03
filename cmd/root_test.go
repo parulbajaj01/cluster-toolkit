@@ -17,19 +17,90 @@ limitations under the License.
 package cmd
 
 import (
+	"context"
+	"hpc-toolkit/telemetry"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"cloud.google.com/go/monitoring/apiv3/v2/monitoringpb"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/storage/filesystem"
+	"github.com/stretchr/testify/mock"
 	. "gopkg.in/check.v1"
 )
+
+type MockGCSClient struct {
+	mock.Mock
+}
+
+func (m *MockGCSClient) Bucket(name string) telemetry.GCSBucketHandle {
+	args := m.Called(name)
+	return args.Get(0).(telemetry.GCSBucketHandle)
+}
+
+func (m *MockGCSClient) Close() error {
+	args := m.Called()
+	return args.Error(0)
+}
+
+type MockCloudMonitoringClient struct {
+	mock.Mock
+}
+
+func (m *MockCloudMonitoringClient) CreateTimeSeries(ctx context.Context, req *monitoringpb.CreateTimeSeriesRequest) error {
+	args := m.Called(ctx, req)
+	return args.Error(0)
+}
+
+func (m *MockCloudMonitoringClient) Close() error {
+	args := m.Called()
+	return args.Error(0)
+}
+
+var loggedEvents []telemetry.TelemetryEvent
+var mockMetricClient *MockCloudMonitoringClient
+var mockGCSClient *MockGCSClient
+
+func mockLogEvent(event telemetry.EventType, file string, message string, modules []string) {
+	loggedEvents = append(loggedEvents, telemetry.TelemetryEvent{
+		Event:   event,
+		File:    file,
+		Message: message,
+		Modules: modules,
+	})
+}
+
+func mockGetModules(path string) []string {
+	return []string{"mock_module_1", "mock_module_2"}
+}
+
+func setupMocks() {
+	loggedEvents = []telemetry.TelemetryEvent{}
+	mockMetricClient = new(MockCloudMonitoringClient)
+	mockGCSClient = new(MockGCSClient)
+
+	telemetry.LogEvent = mockLogEvent
+	telemetry.GetModules = mockGetModules
+
+	telemetry.NewMetricClient = func(ctx context.Context) (telemetry.CloudMonitoringClient, error) {
+		return mockMetricClient, nil
+	}
+	telemetry.NewGCSClient = func(ctx context.Context) (telemetry.GCSClient, error) {
+		return mockGCSClient, nil
+	}
+}
+
+func resetMocks() {
+	loggedEvents = []telemetry.TelemetryEvent{}
+	mockMetricClient.AssertExpectations(nil)
+	mockGCSClient.AssertExpectations(nil)
+}
 
 type MySuite struct{}
 
