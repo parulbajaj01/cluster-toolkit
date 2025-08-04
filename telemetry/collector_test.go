@@ -129,13 +129,24 @@ func captureLog() (*bytes.Buffer, func()) {
 	}
 }
 
+func setEnv(t *testing.T, key, value string) {
+	if err := os.Setenv(key, value); err != nil {
+		t.Fatalf("Failed to set environment variable %s: %v", key, err)
+	}
+}
+
+func unsetEnv(key string) {
+	_ = os.Unsetenv(key)
+}
+
 func resetTelemetryState() {
 	TelemetryEnabled = true
 	userTelemetryBucket = ""
 	userProjectID = ""
-	os.Unsetenv("CLUSTER_TOOLKIT_TELEMETRY")
-	os.Unsetenv("CLUSTER_TOOLKIT_TELEMETRY_PROJECT")
-	os.Unsetenv("CLUSTER_TOOLKIT_TELEMETRY_BUCKET")
+
+	unsetEnv("CLUSTER_TOOLKIT_TELEMETRY")
+	unsetEnv("CLUSTER_TOOLKIT_TELEMETRY_PROJECT")
+	unsetEnv("CLUSTER_TOOLKIT_TELEMETRY_BUCKET")
 
 	NewGCSClient = func(ctx context.Context) (GCSClient, error) {
 		return &MockGCSClient{}, nil
@@ -159,14 +170,14 @@ func TestTelemetryEnabledDisabled(t *testing.T) {
 	resetTelemetryState()
 	assert.True(t, TelemetryEnabled, "Telemetry should be enabled by default")
 
-	os.Setenv("CLUSTER_TOOLKIT_TELEMETRY", "false")
+	setEnv(t, "CLUSTER_TOOLKIT_TELEMETRY", "false")
 	TelemetryEnabled = true
 	if os.Getenv("CLUSTER_TOOLKIT_TELEMETRY") == "false" {
 		TelemetryEnabled = false
 	}
 	assert.False(t, TelemetryEnabled, "Telemetry should be disabled when CLUSTER_TOOLKIT_TELEMETRY is 'false'")
 
-	os.Setenv("CLUSTER_TOOLKIT_TELEMETRY", "true")
+	setEnv(t, "CLUSTER_TOOLKIT_TELEMETRY", "true")
 	TelemetryEnabled = true
 	if os.Getenv("CLUSTER_TOOLKIT_TELEMETRY") == "false" {
 		TelemetryEnabled = false
@@ -179,8 +190,8 @@ func TestTelemetryEnabledDisabled(t *testing.T) {
 func TestInit_EnvironmentVariables(t *testing.T) {
 	defer resetTelemetryState()
 
-	os.Setenv("CLUSTER_TOOLKIT_TELEMETRY_PROJECT", "test-project")
-	os.Setenv("CLUSTER_TOOLKIT_TELEMETRY_BUCKET", "test-bucket")
+	setEnv(t, "CLUSTER_TOOLKIT_TELEMETRY_PROJECT", "test-project")
+	setEnv(t, "CLUSTER_TOOLKIT_TELEMETRY_BUCKET", "test-bucket")
 
 	userProjectID = os.Getenv("CLUSTER_TOOLKIT_TELEMETRY_PROJECT")
 	userTelemetryBucket = os.Getenv("CLUSTER_TOOLKIT_TELEMETRY_BUCKET")
@@ -188,8 +199,8 @@ func TestInit_EnvironmentVariables(t *testing.T) {
 	assert.Equal(t, "test-project", userProjectID, "userProjectID should be set from env var")
 	assert.Equal(t, "test-bucket", userTelemetryBucket, "userTelemetryBucket should be set from env var")
 
-	os.Unsetenv("CLUSTER_TOOLKIT_TELEMETRY_PROJECT")
-	os.Unsetenv("CLUSTER_TOOLKIT_TELEMETRY_BUCKET")
+	unsetEnv("CLUSTER_TOOLKIT_TELEMETRY_PROJECT")
+	unsetEnv("CLUSTER_TOOLKIT_TELEMETRY_BUCKET")
 }
 
 func TestLogEvent_TelemetryDisabled(t *testing.T) {
@@ -250,6 +261,7 @@ func TestLogToFile(t *testing.T) {
 
 func TestGetModules_ValidBlueprint(t *testing.T) {
 	defer resetTelemetryState()
+
 	setMockReadFile([]byte(`
 deployment_groups:
   - modules:
@@ -266,6 +278,7 @@ deployment_groups:
 
 func TestGetModules_InvalidYAML(t *testing.T) {
 	defer resetTelemetryState()
+
 	setMockReadFile([]byte(`
 deployment_groups:
   - modules:
@@ -299,9 +312,9 @@ func TestGetModules_NonExistentFile(t *testing.T) {
 func TestSendToUserGCSBucket_SimulatedSuccess(t *testing.T) {
 	defer resetTelemetryState()
 
-	os.Setenv("CLUSTER_TOOLKIT_TELEMETRY_BUCKET", "mock-bucket")
+	setEnv(t, "CLUSTER_TOOLKIT_TELEMETRY_BUCKET", "mock-bucket")
 	userTelemetryBucket = os.Getenv("CLUSTER_TOOLKIT_TELEMETRY_BUCKET")
-	os.Setenv("CLUSTER_TOOLKIT_TELEMETRY_PROJECT", "test-project-id")
+	setEnv(t, "CLUSTER_TOOLKIT_TELEMETRY_PROJECT", "test-project-id")
 	userProjectID = os.Getenv("CLUSTER_TOOLKIT_TELEMETRY_PROJECT")
 
 	mockWriter := new(MockGCSWriter)
@@ -354,9 +367,9 @@ func TestSendToUserGCSBucket_SimulatedSuccess(t *testing.T) {
 func TestSendToUserGCSBucket_ClientCreationError(t *testing.T) {
 	defer resetTelemetryState()
 
-	os.Setenv("CLUSTER_TOOLKIT_TELEMETRY_BUCKET", "mock-bucket")
+	setEnv(t, "CLUSTER_TOOLKIT_TELEMETRY_BUCKET", "mock-bucket")
 	userTelemetryBucket = os.Getenv("CLUSTER_TOOLKIT_TELEMETRY_BUCKET")
-	os.Setenv("CLUSTER_TOOLKIT_TELEMETRY_PROJECT", "test-project-id")
+	setEnv(t, "CLUSTER_TOOLKIT_TELEMETRY_PROJECT", "test-project-id")
 	userProjectID = os.Getenv("CLUSTER_TOOLKIT_TELEMETRY_PROJECT")
 
 	expectedError := errors.New("failed to create GCS client")
@@ -376,9 +389,9 @@ func TestSendToUserGCSBucket_ClientCreationError(t *testing.T) {
 func TestSendToUserGCSBucket_WriterCloseError(t *testing.T) {
 	defer resetTelemetryState()
 
-	os.Setenv("CLUSTER_TOOLKIT_TELEMETRY_BUCKET", "mock-bucket")
+	setEnv(t, "CLUSTER_TOOLKIT_TELEMETRY_BUCKET", "mock-bucket")
 	userTelemetryBucket = os.Getenv("CLUSTER_TOOLKIT_TELEMETRY_BUCKET")
-	os.Setenv("CLUSTER_TOOLKIT_TELEMETRY_PROJECT", "test-project-id")
+	setEnv(t, "CLUSTER_TOOLKIT_TELEMETRY_PROJECT", "test-project-id")
 	userProjectID = os.Getenv("CLUSTER_TOOLKIT_TELEMETRY_PROJECT")
 
 	mockWriter := new(MockGCSWriter)
@@ -550,9 +563,9 @@ func TestLogEvent_EndToEndWithMocks(t *testing.T) {
 	defer resetTelemetryState()
 	defer os.Remove("telemetry.log")
 
-	os.Setenv("CLUSTER_TOOLKIT_TELEMETRY", "true")
-	os.Setenv("CLUSTER_TOOLKIT_TELEMETRY_BUCKET", "my-test-bucket")
-	os.Setenv("CLUSTER_TOOLKIT_TELEMETRY_PROJECT", "my-test-project")
+	setEnv(t, "CLUSTER_TOOLKIT_TELEMETRY", "true")
+	setEnv(t, "CLUSTER_TOOLKIT_TELEMETRY_BUCKET", "my-test-bucket")
+	setEnv(t, "CLUSTER_TOOLKIT_TELEMETRY_PROJECT", "my-test-project")
 
 	TelemetryEnabled = true
 	userTelemetryBucket = "my-test-bucket"
@@ -620,8 +633,8 @@ func TestMockGCSWriter_ConcurrentWrite(t *testing.T) {
 	mockWriter := new(MockGCSWriter)
 	mockWriter.On("Write", mock.Anything).Return(0, nil)
 
-	const numGoroutines = 10
-	const numWritesPerGoroutine = 10
+	var numGoroutines = 10
+	var numWritesPerGoroutine = 10
 
 	var wg sync.WaitGroup
 	for i := 0; i < numGoroutines; i++ {
