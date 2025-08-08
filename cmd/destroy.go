@@ -26,6 +26,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"hpc-toolkit/telemetry"
+
 	"github.com/spf13/cobra"
 )
 
@@ -60,6 +62,8 @@ func runDestroyCmd(cmd *cobra.Command, args []string) {
 	checkErr(validateGroupSelectionFlags(bp), ctx)
 	checkErr(shell.ValidateDeploymentDirectory(bp.Groups, deplRoot), ctx)
 
+	telemetry.LogEvent(telemetry.EventDestroyStart, deplRoot, "Destroy operation started", nil)
+
 	// destroy in reverse order of creation!
 	packerManifests := []string{}
 	for i := len(bp.Groups) - 1; i >= 0; i-- {
@@ -71,6 +75,7 @@ func runDestroyCmd(cmd *cobra.Command, args []string) {
 		groupDir := filepath.Join(deplRoot, string(group.Name))
 
 		if err := shell.ImportInputs(groupDir, artifactsDir, bp); err != nil {
+			telemetry.LogEvent(telemetry.EventDestroyError, string(group.Name), err.Error(), nil)
 			logging.Error("failed to import inputs for group %q: %v", group.Name, err)
 			// still proceed with destroying the group
 		}
@@ -90,10 +95,14 @@ func runDestroyCmd(cmd *cobra.Command, args []string) {
 
 		if err != nil {
 			logging.Error("failed to destroy group %q:\n%s", group.Name, renderError(err, *ctx))
+			telemetry.LogEvent(telemetry.EventDestroyError, string(group.Name), err.Error(), nil)
+
 			if i == 0 || !destroyChoice(bp.Groups[i-1].Name) {
 				logging.Fatal("destruction of %q failed", deplRoot)
 			}
 		}
+
+		telemetry.LogEvent(telemetry.EventDestroySuccess, string(group.Name), "Group destroyed successfully", nil)
 
 	}
 
@@ -103,6 +112,7 @@ func runDestroyCmd(cmd *cobra.Command, args []string) {
 func destroyTerraformGroup(groupDir string) error {
 	tf, err := shell.ConfigureTerraform(groupDir)
 	if err != nil {
+		telemetry.LogEvent(telemetry.EventDestroyError, groupDir, "Terraform configuration failed", nil)
 		return err
 	}
 
@@ -127,6 +137,7 @@ func destroyChoice(nextGroup config.GroupName) bool {
 
 		in, err := reader.ReadString('\n')
 		if err != nil {
+			telemetry.LogEvent(telemetry.EventDestroyError, string(nextGroup), "Terraform configuration failed:", nil)
 			logging.Fatal("%v", err)
 		}
 

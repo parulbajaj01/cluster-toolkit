@@ -23,6 +23,8 @@ import (
 	"hpc-toolkit/pkg/shell"
 	"path/filepath"
 
+	"hpc-toolkit/telemetry"
+
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -56,8 +58,15 @@ func runDeployCmd(cmd *cobra.Command, args []string) {
 
 	if checkDir(cmd, args) != nil { // arg[0] is BLUEPRINT_FILE
 		deplRoot = doCreate(args[0])
+
+		if deplRoot == "" {
+			telemetry.LogEvent(telemetry.EventDeployError, args[0], "empty deployment path", nil)
+			checkErr(fmt.Errorf("blueprint creation returned empty path"), nil)
+			return
+		}
 	} else { // arg[0] is DEPLOYMENT_DIRECTORY
 		deplRoot = args[0]
+
 		// check that no "create" flags were specified
 		cmd.Flags().VisitAll(func(f *pflag.Flag) {
 			if f.Changed && createCmd.Flag(f.Name) != nil {
@@ -65,7 +74,34 @@ func runDeployCmd(cmd *cobra.Command, args []string) {
 			}
 		})
 	}
+
+	telemetry.LogEvent(telemetry.EventDeployStart, deplRoot, "Starting deployment", nil)
+
+	defer func() {
+		if r := recover(); r != nil {
+			telemetry.LogEvent(telemetry.EventDeployError, deplRoot, "Deployment panic", nil)
+			panic(r)
+		}
+	}()
+
+	err := doDeployWithTelemetry(deplRoot)
+	if err != nil {
+		telemetry.LogEvent(telemetry.EventDeployError, deplRoot, err.Error(), nil)
+		return
+	}
+
+	telemetry.LogEvent(telemetry.EventDeploySuccess, deplRoot, "Deployment finished successfully", nil)
+
+}
+
+func doDeployWithTelemetry(deplRoot string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic during deployment: %v", r)
+		}
+	}()
 	doDeploy(deplRoot)
+	return nil
 }
 
 func doDeploy(deplRoot string) {
@@ -121,6 +157,7 @@ func validateRuntimeDependencies(deplDir string, groups []config.Group) error {
 				Err:  fmt.Errorf("group %s is an unsupported kind %q", group.Name, group.Kind().String())}
 		}
 		if err != nil {
+			telemetry.LogEvent(telemetry.EventDeployError, deplDir, "Terraform configuration failed", nil)
 			return err
 		}
 	}
@@ -129,6 +166,7 @@ func validateRuntimeDependencies(deplDir string, groups []config.Group) error {
 
 func deployPackerGroup(moduleDir string, applyBehavior shell.ApplyBehavior) error {
 	if err := shell.ConfigurePacker(); err != nil {
+		telemetry.LogEvent(telemetry.EventDeployError, moduleDir, "Terraform configuration failed", nil)
 		return err
 	}
 	c := shell.ProposedChanges{
@@ -139,14 +177,17 @@ func deployPackerGroup(moduleDir string, applyBehavior shell.ApplyBehavior) erro
 	if buildImage {
 		logging.Info("initializing packer module at %s", moduleDir)
 		if err := shell.ExecPackerCmd(moduleDir, false, "init", "."); err != nil {
+			telemetry.LogEvent(telemetry.EventDeployError, moduleDir, "initializing packer module failed", nil)
 			return err
 		}
 		logging.Info("validating packer module at %s", moduleDir)
 		if err := shell.ExecPackerCmd(moduleDir, false, "validate", "."); err != nil {
+			telemetry.LogEvent(telemetry.EventDeployError, moduleDir, "validating packer module failed", nil)
 			return err
 		}
 		logging.Info("building image using packer module at %s", moduleDir)
 		if err := shell.ExecPackerCmd(moduleDir, true, "build", "."); err != nil {
+			telemetry.LogEvent(telemetry.EventDeployError, moduleDir, "building image using packer module failed", nil)
 			return err
 		}
 	}
@@ -156,6 +197,7 @@ func deployPackerGroup(moduleDir string, applyBehavior shell.ApplyBehavior) erro
 func deployTerraformGroup(groupDir string, artifactsDir string, applyBehavior shell.ApplyBehavior, outputFormat shell.OutputFormat) error {
 	tf, err := shell.ConfigureTerraform(groupDir)
 	if err != nil {
+		telemetry.LogEvent(telemetry.EventDeployError, groupDir, "Terraform configuration failed", nil)
 		return err
 	}
 	return shell.ExportOutputs(tf, artifactsDir, applyBehavior, outputFormat)

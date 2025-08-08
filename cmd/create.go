@@ -28,6 +28,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"hpc-toolkit/telemetry"
+
 	"github.com/spf13/cobra"
 	"github.com/zclconf/go-cty/cty"
 	"gopkg.in/yaml.v3"
@@ -70,7 +72,19 @@ var (
 )
 
 func runCreateCmd(cmd *cobra.Command, args []string) {
+	blueprintPath := args[0]
+	modules := telemetry.GetModules(blueprintPath)
+
+	telemetry.LogEvent(telemetry.EventCreateStart, blueprintPath, "Starting blueprint creation", modules)
+
 	deplDir := doCreate(args[0])
+
+	if deplDir == "" {
+		telemetry.LogEvent(telemetry.EventCreateError, blueprintPath, "Blueprint creation returned empty path", modules)
+		return
+	}
+	telemetry.LogEvent(telemetry.EventCreateSuccess, blueprintPath, "Blueprint created successfully", modules)
+
 	logging.Info("To deploy your infrastructure please run:")
 	logging.Info("")
 	logging.Info(boldGreen("%s deploy %s"), execPath(), deplDir)
@@ -79,11 +93,20 @@ func runCreateCmd(cmd *cobra.Command, args []string) {
 }
 
 func doCreate(path string) string {
-	bp, ctx := expandOrDie(path)
+	bp, _ := expandOrDie(path)
 	deplDir := filepath.Join(createFlags.outputDir, bp.DeploymentName())
 	logging.Info("Creating deployment folder %q ...", deplDir)
-	checkErr(checkOverwriteAllowed(deplDir, bp, createFlags.overwriteDeployment, createFlags.forceOverwrite), ctx)
-	checkErr(modulewriter.WriteDeployment(bp, deplDir), ctx)
+
+	if err := checkOverwriteAllowed(deplDir, bp, createFlags.overwriteDeployment, createFlags.forceOverwrite); err != nil {
+		telemetry.LogEvent(telemetry.EventCreateError, bp.BlueprintName, "Overwrite check failed", nil)
+		return ""
+	}
+
+	if err := modulewriter.WriteDeployment(bp, deplDir); err != nil {
+		telemetry.LogEvent(telemetry.EventCreateError, bp.BlueprintName, "Writing deployment failed", nil)
+		return ""
+	}
+
 	return deplDir
 }
 
@@ -106,9 +129,11 @@ func expandOrDie(path string) (config.Blueprint, *config.YamlCtx) {
 		checkErr(err, &dCtx)
 	}
 	if err := setCLIVariables(&ds, expandFlags.cliVariables); err != nil {
+		telemetry.LogEvent(telemetry.EventCreateError, bp.BlueprintName, "Failed to set the variables at CLI", nil)
 		logging.Fatal("Failed to set the variables at CLI: %v", err)
 	}
 	if err := setBackendConfig(&ds, expandFlags.cliBEConfigVars); err != nil {
+		telemetry.LogEvent(telemetry.EventCreateError, bp.BlueprintName, "Failed to set the backend config at CLI", nil)
 		logging.Fatal("Failed to set the backend config at CLI: %v", err)
 	}
 
@@ -135,6 +160,8 @@ func validateMaybeDie(bp config.Blueprint, ctx config.YamlCtx) {
 	if err == nil {
 		return
 	}
+
+	telemetry.LogEvent("validation_error", bp.BlueprintName, "There was an error in validation", nil)
 	logging.Error("%s", renderError(err, ctx))
 
 	logging.Error("One or more blueprint validators has failed. See messages above for suggested")
@@ -169,12 +196,14 @@ func setCLIVariables(ds *config.DeploymentSettings, s []string) error {
 		arr := strings.SplitN(cliVar, "=", 2)
 
 		if len(arr) != 2 {
+			telemetry.LogEvent(telemetry.EventCreateError, arr[0], "invalid format", nil)
 			return fmt.Errorf("invalid format: '%s' should follow the 'name=value' format", cliVar)
 		}
 		// Convert the variable's string literal to its equivalent default type.
 		key := arr[0]
 		var v config.YamlValue
 		if err := yaml.Unmarshal([]byte(arr[1]), &v); err != nil {
+			telemetry.LogEvent(telemetry.EventCreateError, arr[0], "invalid input", nil)
 			return fmt.Errorf("invalid input: unable to convert '%s' value '%s' to known type", key, arr[1])
 		}
 		ds.Vars = ds.Vars.With(key, v.Unwrap())
@@ -192,6 +221,7 @@ func setBackendConfig(ds *config.DeploymentSettings, s []string) error {
 		arr := strings.SplitN(config, "=", 2)
 
 		if len(arr) != 2 {
+			telemetry.LogEvent(telemetry.EventCreateError, config, "invalid format", nil)
 			return fmt.Errorf("invalid format: '%s' should follow the 'name=value' format", config)
 		}
 
@@ -254,26 +284,31 @@ func checkOverwriteAllowed(depDir string, bp config.Blueprint, overwriteFlag boo
 
 	if _, err := os.Stat(modulewriter.HiddenGhpcDir(depDir)); os.IsNotExist(err) {
 		// hidden ghpc dir does not exist
+		telemetry.LogEvent(telemetry.EventCreateError, bp.BlueprintName, "Folder does not exist", nil)
 		return forceErr(fmt.Errorf("folder %q already exists, and it is not a valid GHPC deployment folder", depDir))
 	}
 
 	// try to get previous deployment
 	expPath := filepath.Join(modulewriter.ArtifactsDir(depDir), modulewriter.ExpandedBlueprintName)
 	if _, err := os.Stat(expPath); os.IsNotExist(err) {
+		telemetry.LogEvent(telemetry.EventCreateError, bp.BlueprintName, "Expanded blueprint file missing", nil)
 		return forceErr(fmt.Errorf("expanded blueprint file %q is missing, this could be a result of changing GHPC version between consecutive deployments", expPath))
 	}
 	prev, _, err := config.NewBlueprint(expPath)
 	if err != nil {
+		telemetry.LogEvent(telemetry.EventCreateError, bp.BlueprintName, "Terraform configuration failed", nil)
 		return forceErr(err)
 	}
 
 	if prev.GhpcVersion != bp.GhpcVersion {
+		telemetry.LogEvent(telemetry.EventCreateError, bp.BlueprintName, "GhpcVersion has changed", nil)
 		return forceErr(fmt.Errorf(
 			"ghpc_version has changed from %q to %q, using different versions of GHPC to update a live deployment is not officially supported",
 			prev.GhpcVersion, bp.GhpcVersion))
 	}
 
 	if !overwriteFlag {
+		telemetry.LogEvent(telemetry.EventCreateError, bp.BlueprintName, "Deployment folder already exists", nil)
 		return config.HintError{
 			Err:  fmt.Errorf("deployment folder %q already exists", depDir),
 			Hint: "use -w to overwrite"}
@@ -286,6 +321,7 @@ func checkOverwriteAllowed(depDir string, bp config.Blueprint, overwriteFlag boo
 
 	for _, g := range prev.Groups {
 		if !newGroups[g.Name] {
+			telemetry.LogEvent(telemetry.EventCreateError, bp.BlueprintName, "Group is not supported", nil)
 			return forceErr(fmt.Errorf("you are attempting to remove a deployment group %q, which is not supported", g.Name))
 		}
 	}

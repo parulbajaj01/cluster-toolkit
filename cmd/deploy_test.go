@@ -18,21 +18,36 @@ package cmd
 
 import (
 	"hpc-toolkit/pkg/shell"
+	"hpc-toolkit/telemetry"
 	"os"
 
 	. "gopkg.in/check.v1"
 )
 
 func (s *MySuite) TestDeployGroups(c *C) {
+	setupMocks()
+	defer resetMocks()
+
 	var err error
 	pathEnv := os.Getenv("PATH")
 	os.Setenv("PATH", "")
+	defer os.Setenv("PATH", pathEnv)
 
 	err = deployTerraformGroup(".", getArtifactsDir("."), shell.NeverApply, shell.TextOutput)
 	c.Check(err, NotNil)
 
+	c.Check(loggedEvents, HasLen, 1)
+	c.Check(loggedEvents[0].Event, Equals, telemetry.EventDeployError)
+	c.Check(loggedEvents[0].File, Equals, ".")
+	c.Check(loggedEvents[0].Message, Equals, "Terraform configuration failed")
+
+	resetMocks()
+
 	err = deployPackerGroup(".", shell.NeverApply)
 	c.Check(err, NotNil)
 
-	os.Setenv("PATH", pathEnv)
+	c.Check(loggedEvents, HasLen, 1)
+	c.Check(loggedEvents[0].Event, Equals, telemetry.EventDeployError)
+	c.Check(loggedEvents[0].File, Equals, ".")
+	c.Check(loggedEvents[0].Message, Equals, "Terraform configuration failed")
 }
